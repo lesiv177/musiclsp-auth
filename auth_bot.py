@@ -57,7 +57,7 @@ if not USE_POSTGRES:
 
 # ─── Тарифи (Stars) ──────────────────────────────────────────────────────────
 PLANS = {
-    "test":   {"days": 7,  "stars": 3,   "label": "⭐ Тест: 7 днів — 3 Stars"},
+    "test":   {"days": 7,  "stars": 3,   "label": "⭐ Тест: 7 днів — 1 Stars"},
     "month":  {"days": 30, "stars": 300, "label": "💎 Місяць: 30 днів — 300 Stars"},
     "quarter":{"days": 90, "stars": 750, "label": "👑 Квартал: 90 днів — 750 Stars"},
 }
@@ -145,7 +145,10 @@ def get_user(uid):
                 return dict(zip(cols, row))
             return None
         else:
-            return c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+            row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+            if row:
+                return dict(row)
+            return None
 
 def create_user(uid, username):
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -206,18 +209,23 @@ def activate_premium(uid, days, plan, stars, charge_id):
     logger.info(f"Premium activated for user {uid}: {days} days, plan={plan}")
     return expires
 
+def _get_val(row, key, default=None):
+    """Get value from dict or sqlite3.Row."""
+    if isinstance(row, dict):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except (KeyError, TypeError):
+        return default
+
 def is_premium_active(uid):
     """Check if user has active premium."""
     u = get_user(uid)
     if not u:
         return False
 
-    if USE_POSTGRES:
-        is_prem = u.get("is_premium", False)
-        expires = u.get("premium_expires")
-    else:
-        is_prem = bool(u["is_premium"])
-        expires = u["premium_expires"]
+    is_prem = _get_val(u, "is_premium")
+    expires = _get_val(u, "premium_expires")
 
     if not is_prem or not expires:
         return False
@@ -243,8 +251,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = "💳 <b>MusicLSP — Підписка</b>\n\n"
 
     if active:
-        expires = u.get("premium_expires", "—")
-        if expires:
+        expires = _get_val(u, "premium_expires", "—")
+        if expires and expires != "—":
             try:
                 exp_dt = datetime.datetime.fromisoformat(expires)
                 days_left = (exp_dt - datetime.datetime.now(datetime.timezone.utc)).days
@@ -253,6 +261,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text += f"⏳ Залишилось: {days_left} днів\n\n"
             except:
                 text += "✅ <b>Premium активно!</b>\n\n"
+        else:
+            text += "✅ <b>Premium активно!</b>\n\n"
     else:
         text += "💿 Зараз: <b>Free</b>\n\n"
 
@@ -306,7 +316,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         u = get_user(uid)
 
         if active and u:
-            expires = u.get("premium_expires", "—")
+            expires = _get_val(u, "premium_expires", "—")
             text = f"✅ <b>Premium активно!</b>\n\n"
             text += f"📅 Закінчується: {expires[:10]}\n"
             try:
@@ -395,7 +405,7 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     u = get_user(uid)
 
     if active and u:
-        expires = u.get("premium_expires", "—")
+        expires = _get_val(u, "premium_expires", "—")
         text = f"✅ <b>Premium активно!</b>\n\n"
         text += f"📅 Закінчується: {expires[:10]}\n"
         try:
