@@ -9,6 +9,13 @@ import os
 import logging
 import datetime
 
+# ─── Логування (спочатку!) ──────────────────────────────────────────────────
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
 # Використовуємо pg8000 (pure Python, не треба системних бібліотек)
 try:
     import pg8000
@@ -26,12 +33,7 @@ from telegram.ext import (
     PreCheckoutQueryHandler, MessageHandler, ContextTypes, filters
 )
 
-# ─── Логування ────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+
 
 # ─── Конфіг ───────────────────────────────────────────────────────────────────
 AUTH_BOT_TOKEN = os.environ.get("AUTH_BOT_TOKEN", "")
