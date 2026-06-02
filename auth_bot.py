@@ -57,7 +57,7 @@ if not USE_POSTGRES:
 
 # ─── Тарифи (Stars) ──────────────────────────────────────────────────────────
 PLANS = {
-    "test":   {"days": 7,  "stars": 0,   "label": "⭐ Тест: 7 днів — 3 Stars"},
+    "test":   {"days": 7,  "stars": 1,   "label": "⭐ Тест: 7 днів — 1 Stars"},
     "month":  {"days": 30, "stars": 300, "label": "💎 Місяць: 30 днів — 300 Stars"},
     "quarter":{"days": 90, "stars": 750, "label": "👑 Квартал: 90 днів — 750 Stars"},
 }
