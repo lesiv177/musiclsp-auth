@@ -9,20 +9,14 @@ import os
 import logging
 import datetime
 
-# Спробуємо підключити psycopg2 (PostgreSQL), якщо немає — використаємо pg8000 або SQLite
+# Використовуємо pg8000 (pure Python, не треба системних бібліотек)
 try:
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
+    import pg8000
     POSTGRES_AVAILABLE = True
-    logger.info("✅ psycopg2 available")
+    logger.info("✅ pg8000 available")
 except ImportError:
-    try:
-        import pg8000
-        POSTGRES_AVAILABLE = True
-        logger.info("✅ pg8000 available")
-    except ImportError:
-        POSTGRES_AVAILABLE = False
-        logger.warning("⚠️ No PostgreSQL driver available, will use SQLite")
+    POSTGRES_AVAILABLE = False
+    logger.warning("⚠️ pg8000 not available, will use SQLite")
 
 import sqlite3
 
@@ -56,10 +50,7 @@ if DATABASE_URL and POSTGRES_AVAILABLE:
     try:
         db_url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
         logger.info(f"Trying PostgreSQL connection...")
-        if 'psycopg2' in globals():
-            test_conn = psycopg2.connect(db_url, sslmode='require')
-        else:
-            test_conn = pg8000.connect(db_url)
+        test_conn = pg8000.connect(db_url)
         test_conn.close()
         USE_POSTGRES = True
         logger.info("✅ Using PostgreSQL database")
@@ -82,10 +73,7 @@ PLANS = {
 def db():
     if USE_POSTGRES:
         db_url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        if 'psycopg2' in globals():
-            conn = psycopg2.connect(db_url, sslmode='require')
-        else:
-            conn = pg8000.connect(db_url)
+        conn = pg8000.connect(db_url)
         return conn
     else:
         conn = sqlite3.connect(DB_PATH)
@@ -96,10 +84,7 @@ def init_db():
     """Initialize database tables (same as main bot)."""
     if USE_POSTGRES:
         db_url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        if 'psycopg2' in globals():
-            conn = psycopg2.connect(db_url, sslmode='require')
-        else:
-            conn = pg8000.connect(db_url)
+        conn = pg8000.connect(db_url)
         try:
             with conn.cursor() as c:
                 c.execute("""
@@ -160,22 +145,13 @@ def init_db():
 def get_user(uid):
     with db() as c:
         if USE_POSTGRES:
-            if 'psycopg2' in globals():
-                cur = c.cursor()
-                cur.execute("SELECT * FROM users WHERE id = %s", (uid,))
-                row = cur.fetchone()
-                if row:
-                    cols = [desc[0] for desc in cur.description]
-                    return dict(zip(cols, row))
-                return None
-            else:
-                cur = c.cursor()
-                cur.execute("SELECT * FROM users WHERE id = %s", (uid,))
-                row = cur.fetchone()
-                if row:
-                    cols = [desc[0] for desc in cur.description]
-                    return dict(zip(cols, row))
-                return None
+            cur = c.cursor()
+            cur.execute("SELECT * FROM users WHERE id = %s", (uid,))
+            row = cur.fetchone()
+            if row:
+                cols = [desc[0] for desc in cur.description]
+                return dict(zip(cols, row))
+            return None
         else:
             row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
             if row:
