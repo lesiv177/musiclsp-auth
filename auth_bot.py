@@ -57,7 +57,7 @@ if not USE_POSTGRES:
 
 # ─── Тарифи (Stars) ──────────────────────────────────────────────────────────
 PLANS = {
-    "test":   {"days": 7,  "stars": 1,   "label": "⭐ Тест: 7 днів — 1 Stars"},
+    "test":   {"days": 7,  "stars": 3,   "label": "⭐ Тест: 7 днів — 3 Stars"},
     "month":  {"days": 30, "stars": 300, "label": "💎 Місяць: 30 днів — 300 Stars"},
     "quarter":{"days": 90, "stars": 750, "label": "👑 Квартал: 90 днів — 750 Stars"},
 }
@@ -172,10 +172,14 @@ def activate_premium(uid, days, plan, stars, charge_id):
     expires = (now + datetime.timedelta(days=days)).isoformat()
     now_iso = now.isoformat()
 
+    logger.info(f"activate_premium called: uid={uid}, days={days}, plan={plan}")
+    logger.info(f"USE_POSTGRES={USE_POSTGRES}")
+
     with db() as c:
         if USE_POSTGRES:
             cur = c.cursor()
             # Update user premium status
+            logger.info(f"Executing UPDATE users SET is_premium=TRUE WHERE id={uid}")
             cur.execute(
                 """UPDATE users 
                    SET is_premium = TRUE, 
@@ -184,13 +188,18 @@ def activate_premium(uid, days, plan, stars, charge_id):
                    WHERE id = %s""",
                 (now_iso, expires, uid)
             )
+            logger.info(f"UPDATE executed, rowcount={cur.rowcount}")
+
             # Record payment
             cur.execute(
                 """INSERT INTO payments (user_id, plan, stars, days, payment_date, telegram_payment_charge_id)
                    VALUES (%s, %s, %s, %s, %s, %s)""",
                 (uid, plan, stars, days, now_iso, charge_id)
             )
+            logger.info(f"INSERT executed, rowcount={cur.rowcount}")
+
             c.commit()
+            logger.info("COMMIT executed")
         else:
             c.execute(
                 """UPDATE users 
@@ -349,19 +358,33 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
     stars = payment.total_amount
     charge_id = payment.telegram_payment_charge_id
 
+    logger.info(f"=== PAYMENT RECEIVED ===")
+    logger.info(f"User: {uid}")
+    logger.info(f"Payload: {payload}")
+    logger.info(f"Stars: {stars}")
+    logger.info(f"Charge ID: {charge_id}")
+
     # Parse plan from payload: premium_PLAN_UID_TIMESTAMP
     try:
         parts = payload.split("_")
         plan = parts[1]
         plan_info = PLANS.get(plan)
         if not plan_info:
+            logger.error(f"Unknown plan: {plan}")
             await update.message.reply_text("❌ Помилка: невідомий тариф. Звернись до адміна.")
             return
 
         days = plan_info["days"]
+        logger.info(f"Plan: {plan}, Days: {days}")
 
         # Activate premium
+        logger.info(f"Calling activate_premium for user {uid}")
         expires = activate_premium(uid, days, plan, stars, charge_id)
+        logger.info(f"activate_premium returned: {expires}")
+
+        # Verify in DB
+        u = get_user(uid)
+        logger.info(f"User after activation: {u}")
 
         # Send confirmation
         text = (
@@ -392,7 +415,7 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
             logger.warning(f"Failed to notify admin: {e}")
 
     except Exception as e:
-        logger.error(f"Payment processing error: {e}")
+        logger.error(f"Payment processing error: {e}", exc_info=True)
         await update.message.reply_text(
             "❌ Помилка активації. Звернись до адміна @Lesiv.",
             parse_mode="HTML"
