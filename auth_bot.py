@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8  -*-
 """
 MusicLSP Auth Bot — Telegram Stars Payment
 Автоматична активація Premium через оплату Stars
