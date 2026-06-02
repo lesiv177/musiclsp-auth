@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8  -*-
+# -*- coding: utf-8 -*-
 """
 MusicLSP Auth Bot — Telegram Stars Payment
 Автоматична активація Premium через оплату Stars
@@ -9,13 +9,21 @@ import os
 import logging
 import datetime
 
-# Спробуємо підключити psycopg2 (PostgreSQL), якщо немає — використаємо SQLite
+# Спробуємо підключити psycopg2 (PostgreSQL), якщо немає — використаємо pg8000 або SQLite
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
     POSTGRES_AVAILABLE = True
+    logger.info("✅ psycopg2 available")
 except ImportError:
-    POSTGRES_AVAILABLE = False
+    try:
+        import pg8000
+        POSTGRES_AVAILABLE = True
+        logger.info("✅ pg8000 available")
+    except ImportError:
+        POSTGRES_AVAILABLE = False
+        logger.warning("⚠️ No PostgreSQL driver available, will use SQLite")
+
 import sqlite3
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
@@ -36,28 +44,36 @@ AUTH_BOT_TOKEN = os.environ.get("AUTH_BOT_TOKEN", "")
 ADMIN_ID = 1293055247
 AUTHOR = "Lesiv"
 
-# Database: PostgreSQL (Railway) або SQLite (fallback)
+# Database: PostgreSQL (Railway/Neon) або SQLite (fallback)
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USE_POSTGRES = False
+
+logger.info(f"=== DATABASE SETUP ===")
+logger.info(f"DATABASE_URL present: {bool(DATABASE_URL)}")
+logger.info(f"POSTGRES_AVAILABLE: {POSTGRES_AVAILABLE}")
 
 if DATABASE_URL and POSTGRES_AVAILABLE:
     try:
         db_url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        test_conn = psycopg2.connect(db_url, sslmode='require')
+        logger.info(f"Trying PostgreSQL connection...")
+        if 'psycopg2' in globals():
+            test_conn = psycopg2.connect(db_url, sslmode='require')
+        else:
+            test_conn = pg8000.connect(db_url)
         test_conn.close()
         USE_POSTGRES = True
         logger.info("✅ Using PostgreSQL database")
     except Exception as e:
-        logger.warning(f"PostgreSQL connection failed: {e}, falling back to SQLite")
+        logger.error(f"PostgreSQL connection failed: {e}")
         USE_POSTGRES = False
 
 if not USE_POSTGRES:
     DB_PATH = "musiclsp_v3.db"
-    logger.info(f"Using SQLite: {DB_PATH}")
+    logger.warning(f"⚠️ Using SQLite: {DB_PATH}")
 
 # ─── Тарифи (Stars) ──────────────────────────────────────────────────────────
 PLANS = {
-    "test":   {"days": 7,  "stars": 1,   "label": "⭐ Тест: 7 днів — 1 Stars"},
+    "test":   {"days": 7,  "stars": 1,   "label": "⭐ Тест: 7 днів — 1 Star"},
     "month":  {"days": 30, "stars": 300, "label": "💎 Місяць: 30 днів — 300 Stars"},
     "quarter":{"days": 90, "stars": 750, "label": "👑 Квартал: 90 днів — 750 Stars"},
 }
@@ -66,7 +82,10 @@ PLANS = {
 def db():
     if USE_POSTGRES:
         db_url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        conn = psycopg2.connect(db_url, sslmode='require')
+        if 'psycopg2' in globals():
+            conn = psycopg2.connect(db_url, sslmode='require')
+        else:
+            conn = pg8000.connect(db_url)
         return conn
     else:
         conn = sqlite3.connect(DB_PATH)
@@ -77,7 +96,10 @@ def init_db():
     """Initialize database tables (same as main bot)."""
     if USE_POSTGRES:
         db_url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        conn = psycopg2.connect(db_url, sslmode='require')
+        if 'psycopg2' in globals():
+            conn = psycopg2.connect(db_url, sslmode='require')
+        else:
+            conn = pg8000.connect(db_url)
         try:
             with conn.cursor() as c:
                 c.execute("""
@@ -133,17 +155,27 @@ def init_db():
                 telegram_payment_charge_id TEXT
             );
             """)
+            logger.info("✅ SQLite tables initialized")
 
 def get_user(uid):
     with db() as c:
         if USE_POSTGRES:
-            cur = c.cursor()
-            cur.execute("SELECT * FROM users WHERE id = %s", (uid,))
-            row = cur.fetchone()
-            if row:
-                cols = [desc[0] for desc in cur.description]
-                return dict(zip(cols, row))
-            return None
+            if 'psycopg2' in globals():
+                cur = c.cursor()
+                cur.execute("SELECT * FROM users WHERE id = %s", (uid,))
+                row = cur.fetchone()
+                if row:
+                    cols = [desc[0] for desc in cur.description]
+                    return dict(zip(cols, row))
+                return None
+            else:
+                cur = c.cursor()
+                cur.execute("SELECT * FROM users WHERE id = %s", (uid,))
+                row = cur.fetchone()
+                if row:
+                    cols = [desc[0] for desc in cur.description]
+                    return dict(zip(cols, row))
+                return None
         else:
             row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
             if row:
@@ -165,58 +197,6 @@ def create_user(uid, username):
                 "INSERT OR IGNORE INTO users (id, username, joined) VALUES (?, ?, ?)",
                 (uid, username, now)
             )
-
-def activate_premium(uid, days, plan, stars, charge_id):
-    """Activate premium for user."""
-    now = datetime.datetime.now(datetime.timezone.utc)
-    expires = (now + datetime.timedelta(days=days)).isoformat()
-    now_iso = now.isoformat()
-
-    logger.info(f"activate_premium called: uid={uid}, days={days}, plan={plan}")
-    logger.info(f"USE_POSTGRES={USE_POSTGRES}")
-
-    with db() as c:
-        if USE_POSTGRES:
-            cur = c.cursor()
-            # Update user premium status
-            logger.info(f"Executing UPDATE users SET is_premium=TRUE WHERE id={uid}")
-            cur.execute(
-                """UPDATE users 
-                   SET is_premium = TRUE, 
-                       premium_since = %s, 
-                       premium_expires = %s 
-                   WHERE id = %s""",
-                (now_iso, expires, uid)
-            )
-            logger.info(f"UPDATE executed, rowcount={cur.rowcount}")
-
-            # Record payment
-            cur.execute(
-                """INSERT INTO payments (user_id, plan, stars, days, payment_date, telegram_payment_charge_id)
-                   VALUES (%s, %s, %s, %s, %s, %s)""",
-                (uid, plan, stars, days, now_iso, charge_id)
-            )
-            logger.info(f"INSERT executed, rowcount={cur.rowcount}")
-
-            c.commit()
-            logger.info("COMMIT executed")
-        else:
-            c.execute(
-                """UPDATE users 
-                   SET is_premium = 1, 
-                       premium_since = ?, 
-                       premium_expires = ? 
-                   WHERE id = ?""",
-                (now_iso, expires, uid)
-            )
-            c.execute(
-                """INSERT INTO payments (user_id, plan, stars, days, payment_date, telegram_payment_charge_id)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (uid, plan, stars, days, now_iso, charge_id)
-            )
-
-    logger.info(f"Premium activated for user {uid}: {days} days, plan={plan}")
-    return expires
 
 def _get_val(row, key, default=None):
     """Get value from dict or sqlite3.Row."""
@@ -245,6 +225,56 @@ def is_premium_active(uid):
     except:
         return False
 
+def activate_premium(uid, days, plan, stars, charge_id):
+    """Activate premium for user."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    expires = (now + datetime.timedelta(days=days)).isoformat()
+    now_iso = now.isoformat()
+
+    logger.info(f"activate_premium called: uid={uid}, days={days}, plan={plan}")
+    logger.info(f"USE_POSTGRES={USE_POSTGRES}")
+
+    with db() as c:
+        if USE_POSTGRES:
+            cur = c.cursor()
+            logger.info(f"Executing UPDATE users SET is_premium=TRUE WHERE id={uid}")
+            cur.execute(
+                """UPDATE users 
+                   SET is_premium = TRUE, 
+                       premium_since = %s, 
+                       premium_expires = %s 
+                   WHERE id = %s""",
+                (now_iso, expires, uid)
+            )
+            logger.info(f"UPDATE executed, rowcount={cur.rowcount}")
+
+            cur.execute(
+                """INSERT INTO payments (user_id, plan, stars, days, payment_date, telegram_payment_charge_id)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (uid, plan, stars, days, now_iso, charge_id)
+            )
+            logger.info(f"INSERT executed, rowcount={cur.rowcount}")
+
+            c.commit()
+            logger.info("COMMIT executed")
+        else:
+            c.execute(
+                """UPDATE users 
+                   SET is_premium = 1, 
+                       premium_since = ?, 
+                       premium_expires = ? 
+                   WHERE id = ?""",
+                (now_iso, expires, uid)
+            )
+            c.execute(
+                """INSERT INTO payments (user_id, plan, stars, days, payment_date, telegram_payment_charge_id)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (uid, plan, stars, days, now_iso, charge_id)
+            )
+
+    logger.info(f"Premium activated for user {uid}: {days} days, plan={plan}")
+    return expires
+
 # ─── Telegram Handlers ────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -253,7 +283,6 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     username = update.effective_user.username or ""
     create_user(uid, username)
 
-    # Check current status
     active = is_premium_active(uid)
     u = get_user(uid)
 
@@ -302,11 +331,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("❌ Помилка: невідомий тариф")
             return
 
-        # Send invoice for Stars payment
         title = f"MusicLSP Premium — {info['days']} днів"
         description = f"Доступ до Premium функцій на {info['days']} днів"
         payload = f"premium_{plan}_{uid}_{datetime.datetime.now().timestamp()}"
-        currency = "XTR"  # Telegram Stars
+        currency = "XTR"
         prices = [LabeledPrice(label=info["label"], amount=info["stars"])]
 
         await ctx.bot.send_invoice(
@@ -314,7 +342,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             title=title,
             description=description,
             payload=payload,
-            provider_token="",  # Empty for Stars
+            provider_token="",
             currency=currency,
             prices=prices,
             start_parameter="premium_payment"
@@ -346,7 +374,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def precheckout_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle pre-checkout query."""
     query = update.pre_checkout_query
-    # Always accept Stars payments
     await query.answer(ok=True)
     logger.info(f"Pre-checkout accepted for user {query.from_user.id}")
 
@@ -364,7 +391,6 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
     logger.info(f"Stars: {stars}")
     logger.info(f"Charge ID: {charge_id}")
 
-    # Parse plan from payload: premium_PLAN_UID_TIMESTAMP
     try:
         parts = payload.split("_")
         plan = parts[1]
@@ -377,16 +403,13 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
         days = plan_info["days"]
         logger.info(f"Plan: {plan}, Days: {days}")
 
-        # Activate premium
         logger.info(f"Calling activate_premium for user {uid}")
         expires = activate_premium(uid, days, plan, stars, charge_id)
         logger.info(f"activate_premium returned: {expires}")
 
-        # Verify in DB
         u = get_user(uid)
         logger.info(f"User after activation: {u}")
 
-        # Send confirmation
         text = (
             f"🎉 <b>Оплату успішно завершено!</b>\n\n"
             f"💎 Premium активовано!\n"
@@ -398,7 +421,6 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
         kb = [[InlineKeyboardButton("🎵 Перейти в MusicLSP", url="https://t.me/MusicLSP_bot")]]
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
-        # Notify admin
         try:
             user = await ctx.bot.get_chat(uid)
             uname = f"@{user.username}" if user.username else str(uid)
@@ -451,9 +473,12 @@ def main():
         logger.error("AUTH_BOT_TOKEN not set!")
         return
 
+    logger.info(f"=== BOT STARTUP ===")
+    logger.info(f"USE_POSTGRES: {USE_POSTGRES}")
+    logger.info(f"DATABASE_URL: {'SET' if DATABASE_URL else 'NOT SET'}")
+
     app = Application.builder().token(AUTH_BOT_TOKEN).build()
 
-    # Handlers
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CallbackQueryHandler(on_callback))
