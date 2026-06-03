@@ -442,6 +442,28 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, parse_mode="HTML")
 
+# ─── Admin Commands ────────────────────────────────────────────────────────────
+
+async def cmd_testpremium(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Admin only: activate premium without payment (for testing)."""
+    uid = update.effective_user.id
+    if uid != ADMIN_ID:
+        await update.message.reply_text("⛔ Тільки для адміна!")
+        return
+
+    create_user(uid, update.effective_user.username or "")
+    expires = activate_premium(uid, 7, "test", 0, "manual_admin")
+
+    text = (
+        f"✅ <b>Premium активовано (тест)!</b>\n\n"
+        f"📅 Термін: 7 днів\n"
+        f"⏳ Закінчується: {expires[:10]}\n\n"
+        f"Переходь в @MusicLSP_bot і тестуй! 🎵"
+    )
+
+    kb = [[InlineKeyboardButton("🎵 Перейти в MusicLSP", url="https://t.me/MusicLSP_bot")]]
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -459,6 +481,7 @@ def main():
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("testpremium", cmd_testpremium))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
