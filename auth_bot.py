@@ -335,66 +335,76 @@ async def notify_premium_activated(uid, days, expires):
         u = get_user(uid)
         lang = _get_val(u, "lang", "uk") if u else "uk"
 
-        # Multilingual messages - single line with explicit newlines
-        msg_uk = "🎉 <b>Вітаємо з Premium!</b>
+        # Build messages with chr(10) for newlines
+        nl = chr(10)
 
-💎 Ви активували Premium на <b>{}</b> днів!
-📅 Закінчується: <b>{}</b>
+        msg_uk = nl.join([
+            "🎉 <b>Вітаємо з Premium!</b>",
+            "",
+            "💎 Ви активували Premium на <b>{}</b> днів!".format(days),
+            "📅 Закінчується: <b>{}</b>".format(expires[:10]),
+            "",
+            "Тепер вам доступні:",
+            "• ZIP альбоми 📦",
+            "• Плейлисти 📋",
+            "• Радіо 📻",
+            "• Тексти пісень 🎤",
+            "• Схожа музика 🤖",
+            "• Статистика 📊",
+            "",
+            "Насолоджуйтесь музикою! 🎵"
+        ])
 
-Тепер вам доступні:
-• ZIP альбоми 📦
-• Плейлисти 📋
-• Радіо 📻
-• Тексти пісень 🎤
-• Схожа музика 🤖
-• Статистика 📊
+        msg_ru = nl.join([
+            "🎉 <b>Поздравляем с Premium!</b>",
+            "",
+            "💎 Вы активировали Premium на <b>{}</b> дней!".format(days),
+            "📅 Заканчивается: <b>{}</b>".format(expires[:10]),
+            "",
+            "Теперь вам доступны:",
+            "• ZIP альбомы 📦",
+            "• Плейлисты 📋",
+            "• Радио 📻",
+            "• Тексты песен 🎤",
+            "• Похожая музыка 🤖",
+            "• Статистика 📊",
+            "",
+            "Наслаждайтесь музыкой! 🎵"
+        ])
 
-Насолоджуйтесь музикою! 🎵".format(days, expires[:10])
+        msg_en = nl.join([
+            "🎉 <b>Congratulations on Premium!</b>",
+            "",
+            "💎 You have activated Premium for <b>{}</b> days!".format(days),
+            "📅 Expires: <b>{}</b>".format(expires[:10]),
+            "",
+            "Now available to you:",
+            "• ZIP albums 📦",
+            "• Playlists 📋",
+            "• Radio 📻",
+            "• Song lyrics 🎤",
+            "• Similar music 🤖",
+            "• Statistics 📊",
+            "",
+            "Enjoy the music! 🎵"
+        ])
 
-        msg_ru = "🎉 <b>Поздравляем с Premium!</b>
-
-💎 Вы активировали Premium на <b>{}</b> дней!
-📅 Заканчивается: <b>{}</b>
-
-Теперь вам доступны:
-• ZIP альбомы 📦
-• Плейлисты 📋
-• Радио 📻
-• Тексты песен 🎤
-• Похожая музыка 🤖
-• Статистика 📊
-
-Наслаждайтесь музыкой! 🎵".format(days, expires[:10])
-
-        msg_en = "🎉 <b>Congratulations on Premium!</b>
-
-💎 You have activated Premium for <b>{}</b> days!
-📅 Expires: <b>{}</b>
-
-Now available to you:
-• ZIP albums 📦
-• Playlists 📋
-• Radio 📻
-• Song lyrics 🎤
-• Similar music 🤖
-• Statistics 📊
-
-Enjoy the music! 🎵".format(days, expires[:10])
-
-        msg_fr = "🎉 <b>Félicitations pour le Premium!</b>
-
-💎 Vous avez activé Premium pour <b>{}</b> jours!
-📅 Expire le: <b>{}</b>
-
-Maintenant disponible pour vous:
-• Albums ZIP 📦
-• Playlists 📋
-• Radio 📻
-• Paroles de chansons 🎤
-• Musique similaire 🤖
-• Statistiques 📊
-
-Profitez de la musique! 🎵".format(days, expires[:10])
+        msg_fr = nl.join([
+            "🎉 <b>Félicitations pour le Premium!</b>",
+            "",
+            "💎 Vous avez activé Premium pour <b>{}</b> jours!".format(days),
+            "📅 Expire le: <b>{}</b>".format(expires[:10]),
+            "",
+            "Maintenant disponible pour vous:",
+            "• Albums ZIP 📦",
+            "• Playlists 📋",
+            "• Radio 📻",
+            "• Paroles de chansons 🎤",
+            "• Musique similaire 🤖",
+            "• Statistiques 📊",
+            "",
+            "Profitez de la musique! 🎵"
+        ])
 
         messages = {
             "uk": msg_uk,
