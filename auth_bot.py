@@ -335,112 +335,112 @@ async def notify_premium_activated(uid, days, expires):
         u = get_user(uid)
         lang = _get_val(u, "lang", "uk") if u else "uk"
 
-        # Multilingual messages
+        # Multilingual messages - using format() to avoid f-string issues
         messages = {
             "uk": (
-                f"🎉 <b>Вітаємо з Premium!</b>
+                "🎉 <b>Вітаємо з Premium!</b>
 
 "
-                f"💎 Ви активували Premium на <b>{days}</b> днів!
+                "💎 Ви активували Premium на <b>{}</b> днів!
 "
-                f"📅 Закінчується: <b>{expires[:10]}</b>
+                "📅 Закінчується: <b>{}</b>
 
 "
-                f"Тепер вам доступні:
+                "Тепер вам доступні:
 "
-                f"• ZIP альбоми 📦
+                "• ZIP альбоми 📦
 "
-                f"• Плейлисти 📋
+                "• Плейлисти 📋
 "
-                f"• Радіо 📻
+                "• Радіо 📻
 "
-                f"• Тексти пісень 🎤
+                "• Тексти пісень 🎤
 "
-                f"• Схожа музика 🤖
+                "• Схожа музика 🤖
 "
-                f"• Статистика 📊
+                "• Статистика 📊
 
 "
-                f"Насолоджуйтесь музикою! 🎵"
-            ),
+                "Насолоджуйтесь музикою! 🎵"
+            ).format(days, expires[:10]),
             "ru": (
-                f"🎉 <b>Поздравляем с Premium!</b>
+                "🎉 <b>Поздравляем с Premium!</b>
 
 "
-                f"💎 Вы активировали Premium на <b>{days}</b> дней!
+                "💎 Вы активировали Premium на <b>{}</b> дней!
 "
-                f"📅 Заканчивается: <b>{expires[:10]}</b>
+                "📅 Заканчивается: <b>{}</b>
 
 "
-                f"Теперь вам доступны:
+                "Теперь вам доступны:
 "
-                f"• ZIP альбомы 📦
+                "• ZIP альбомы 📦
 "
-                f"• Плейлисты 📋
+                "• Плейлисты 📋
 "
-                f"• Радио 📻
+                "• Радио 📻
 "
-                f"• Тексты песен 🎤
+                "• Тексты песен 🎤
 "
-                f"• Похожая музыка 🤖
+                "• Похожая музыка 🤖
 "
-                f"• Статистика 📊
+                "• Статистика 📊
 
 "
-                f"Наслаждайтесь музыкой! 🎵"
-            ),
+                "Наслаждайтесь музыкой! 🎵"
+            ).format(days, expires[:10]),
             "en": (
-                f"🎉 <b>Congratulations on Premium!</b>
+                "🎉 <b>Congratulations on Premium!</b>
 
 "
-                f"💎 You have activated Premium for <b>{days}</b> days!
+                "💎 You have activated Premium for <b>{}</b> days!
 "
-                f"📅 Expires: <b>{expires[:10]}</b>
+                "📅 Expires: <b>{}</b>
 
 "
-                f"Now available to you:
+                "Now available to you:
 "
-                f"• ZIP albums 📦
+                "• ZIP albums 📦
 "
-                f"• Playlists 📋
+                "• Playlists 📋
 "
-                f"• Radio 📻
+                "• Radio 📻
 "
-                f"• Song lyrics 🎤
+                "• Song lyrics 🎤
 "
-                f"• Similar music 🤖
+                "• Similar music 🤖
 "
-                f"• Statistics 📊
+                "• Statistics 📊
 
 "
-                f"Enjoy the music! 🎵"
-            ),
+                "Enjoy the music! 🎵"
+            ).format(days, expires[:10]),
             "fr": (
-                f"🎉 <b>Félicitations pour le Premium!</b>
+                "🎉 <b>Félicitations pour le Premium!</b>
 
 "
-                f"💎 Vous avez activé Premium pour <b>{days}</b> jours!
+                "💎 Vous avez activé Premium pour <b>{}</b> jours!
 "
-                f"📅 Expire le: <b>{expires[:10]}</b>
+                "📅 Expire le: <b>{}</b>
 
 "
-                f"Maintenant disponible pour vous:
+                "Maintenant disponible pour vous:
 "
-                f"• Albums ZIP 📦
+                "• Albums ZIP 📦
 "
-                f"• Playlists 📋
+                "• Playlists 📋
 "
-                f"• Radio 📻
+                "• Radio 📻
 "
-                f"• Paroles de chansons 🎤
+                "• Paroles de chansons 🎤
 "
-                f"• Musique similaire 🤖
+                "• Musique similaire 🤖
 "
-                f"• Statistiques 📊
+                "• Statistiques 📊
 
 "
-                f"Profitez de la musique! 🎵"
-            ),
+                "Profitez de la musique! 🎵"
+            ).format(days, expires[:10]),
         }
 
         msg = messages.get(lang, messages["uk"])
@@ -450,10 +450,10 @@ async def notify_premium_activated(uid, days, expires):
             text=msg,
             parse_mode="HTML"
         )
-        logger.info(f"Premium notification sent to user {uid} in {lang}")
+        logger.info("Premium notification sent to user {} in {}".format(uid, lang))
 
     except Exception as e:
-        logger.error(f"Failed to send premium notification: {e}")
+        logger.error("Failed to send premium notification: {}".format(e))
 
 # ─── Telegram Handlers ────────────────────────────────────────────────────────
 
