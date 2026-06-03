@@ -9,6 +9,7 @@ import os
 import logging
 import datetime
 import urllib.parse
+import asyncio
 
 # ─── Логування (спочатку!) ──────────────────────────────────────────────────
 logging.basicConfig(
