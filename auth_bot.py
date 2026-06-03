@@ -36,6 +36,7 @@ from telegram.ext import (
 
 # ─── Конфіг ───────────────────────────────────────────────────────────────────
 AUTH_BOT_TOKEN = os.environ.get("AUTH_BOT_TOKEN", "")
+MAIN_BOT_TOKEN = os.environ.get("MAIN_BOT_TOKEN", "")  # Для відправки повідомлень з основного бота
 ADMIN_ID = 1293055247
 AUTHOR = "Lesiv"
 
@@ -314,7 +315,145 @@ def activate_premium(uid, days, plan, stars, charge_id):
         conn.close()
 
     logger.info(f"Premium activated for user {uid}: {days} days, plan={plan}")
+
+    # Send notification via main bot
+    asyncio.create_task(notify_premium_activated(uid, days, expires))
+
     return expires
+
+async def notify_premium_activated(uid, days, expires):
+    """Send premium activation notification via main bot."""
+    if not MAIN_BOT_TOKEN:
+        logger.warning("MAIN_BOT_TOKEN not set, skipping notification")
+        return
+
+    try:
+        from telegram import Bot
+        bot = Bot(token=MAIN_BOT_TOKEN)
+
+        # Get user language
+        u = get_user(uid)
+        lang = _get_val(u, "lang", "uk") if u else "uk"
+
+        # Multilingual messages
+        messages = {
+            "uk": (
+                f"🎉 <b>Вітаємо з Premium!</b>
+
+"
+                f"💎 Ви активували Premium на <b>{days}</b> днів!
+"
+                f"📅 Закінчується: <b>{expires[:10]}</b>
+
+"
+                f"Тепер вам доступні:
+"
+                f"• ZIP альбоми 📦
+"
+                f"• Плейлисти 📋
+"
+                f"• Радіо 📻
+"
+                f"• Тексти пісень 🎤
+"
+                f"• Схожа музика 🤖
+"
+                f"• Статистика 📊
+
+"
+                f"Насолоджуйтесь музикою! 🎵"
+            ),
+            "ru": (
+                f"🎉 <b>Поздравляем с Premium!</b>
+
+"
+                f"💎 Вы активировали Premium на <b>{days}</b> дней!
+"
+                f"📅 Заканчивается: <b>{expires[:10]}</b>
+
+"
+                f"Теперь вам доступны:
+"
+                f"• ZIP альбомы 📦
+"
+                f"• Плейлисты 📋
+"
+                f"• Радио 📻
+"
+                f"• Тексты песен 🎤
+"
+                f"• Похожая музыка 🤖
+"
+                f"• Статистика 📊
+
+"
+                f"Наслаждайтесь музыкой! 🎵"
+            ),
+            "en": (
+                f"🎉 <b>Congratulations on Premium!</b>
+
+"
+                f"💎 You have activated Premium for <b>{days}</b> days!
+"
+                f"📅 Expires: <b>{expires[:10]}</b>
+
+"
+                f"Now available to you:
+"
+                f"• ZIP albums 📦
+"
+                f"• Playlists 📋
+"
+                f"• Radio 📻
+"
+                f"• Song lyrics 🎤
+"
+                f"• Similar music 🤖
+"
+                f"• Statistics 📊
+
+"
+                f"Enjoy the music! 🎵"
+            ),
+            "fr": (
+                f"🎉 <b>Félicitations pour le Premium!</b>
+
+"
+                f"💎 Vous avez activé Premium pour <b>{days}</b> jours!
+"
+                f"📅 Expire le: <b>{expires[:10]}</b>
+
+"
+                f"Maintenant disponible pour vous:
+"
+                f"• Albums ZIP 📦
+"
+                f"• Playlists 📋
+"
+                f"• Radio 📻
+"
+                f"• Paroles de chansons 🎤
+"
+                f"• Musique similaire 🤖
+"
+                f"• Statistiques 📊
+
+"
+                f"Profitez de la musique! 🎵"
+            ),
+        }
+
+        msg = messages.get(lang, messages["uk"])
+
+        await bot.send_message(
+            chat_id=uid,
+            text=msg,
+            parse_mode="HTML"
+        )
+        logger.info(f"Premium notification sent to user {uid} in {lang}")
+
+    except Exception as e:
+        logger.error(f"Failed to send premium notification: {e}")
 
 # ─── Telegram Handlers ────────────────────────────────────────────────────────
 
