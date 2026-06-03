@@ -8,6 +8,7 @@ MusicLSP Auth Bot — Telegram Stars Payment
 import os
 import logging
 import datetime
+import urllib.parse
 
 # ─── Логування (спочатку!) ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -33,8 +34,6 @@ from telegram.ext import (
     PreCheckoutQueryHandler, MessageHandler, ContextTypes, filters
 )
 
-
-
 # ─── Конфіг ───────────────────────────────────────────────────────────────────
 AUTH_BOT_TOKEN = os.environ.get("AUTH_BOT_TOKEN", "")
 ADMIN_ID = 1293055247
@@ -48,11 +47,51 @@ logger.info(f"=== DATABASE SETUP ===")
 logger.info(f"DATABASE_URL present: {bool(DATABASE_URL)}")
 logger.info(f"POSTGRES_AVAILABLE: {POSTGRES_AVAILABLE}")
 
+def parse_database_url(url):
+    """Parse PostgreSQL URL into connection parameters."""
+    # Remove postgresql:// or postgres:// prefix
+    if url.startswith("postgresql://"):
+        url = url[13:]
+    elif url.startswith("postgres://"):
+        url = url[11:]
+
+    # Parse the URL
+    parsed = urllib.parse.urlparse("http://" + url)  # Add http:// for parsing
+
+    # Extract credentials
+    auth = parsed.username or ""
+    password = parsed.password or ""
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 5432
+    dbname = parsed.path.lstrip("/") or "postgres"
+
+    # Handle query parameters (like sslmode)
+    query_params = urllib.parse.parse_qs(parsed.query)
+    ssl_mode = query_params.get("sslmode", ["require"])[0]
+
+    return {
+        "host": host,
+        "port": port,
+        "user": auth,
+        "password": password,
+        "database": dbname,
+        "ssl_mode": ssl_mode,
+    }
+
 if DATABASE_URL and POSTGRES_AVAILABLE:
     try:
-        db_url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        logger.info(f"Trying PostgreSQL connection...")
-        test_conn = pg8000.connect(db_url)
+        conn_params = parse_database_url(DATABASE_URL)
+        logger.info(f"Parsed DB params: host={conn_params['host']}, port={conn_params['port']}, db={conn_params['database']}")
+
+        # Connect with pg8000 using explicit parameters
+        test_conn = pg8000.connect(
+            host=conn_params["host"],
+            port=conn_params["port"],
+            user=conn_params["user"],
+            password=conn_params["password"],
+            database=conn_params["database"],
+            ssl_context=True,  # Enable SSL
+        )
         test_conn.close()
         USE_POSTGRES = True
         logger.info("✅ Using PostgreSQL database")
@@ -72,56 +111,63 @@ PLANS = {
 }
 
 # ─── База даних ───────────────────────────────────────────────────────────────
-def db():
+def get_db_connection():
+    """Get database connection."""
     if USE_POSTGRES:
-        db_url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        conn = pg8000.connect(db_url)
-        return conn
+        conn_params = parse_database_url(DATABASE_URL)
+        return pg8000.connect(
+            host=conn_params["host"],
+            port=conn_params["port"],
+            user=conn_params["user"],
+            password=conn_params["password"],
+            database=conn_params["database"],
+            ssl_context=True,
+        )
     else:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         return conn
 
 def init_db():
-    """Initialize database tables (same as main bot)."""
+    """Initialize database tables."""
     if USE_POSTGRES:
-        db_url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        conn = pg8000.connect(db_url)
+        conn = get_db_connection()
         try:
-            with conn.cursor() as c:
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        id BIGINT PRIMARY KEY,
-                        username TEXT,
-                        lang TEXT DEFAULT 'uk',
-                        joined TIMESTAMP,
-                        is_premium BOOLEAN DEFAULT FALSE,
-                        premium_since TIMESTAMP,
-                        premium_expires TIMESTAMP,
-                        state TEXT DEFAULT ''
-                    )
-                """)
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS payments (
-                        id SERIAL PRIMARY KEY,
-                        user_id BIGINT,
-                        plan TEXT,
-                        stars INTEGER,
-                        days INTEGER,
-                        payment_date TIMESTAMP,
-                        telegram_payment_charge_id TEXT
-                    )
-                """)
-                conn.commit()
-                logger.info("✅ PostgreSQL tables initialized")
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    lang TEXT DEFAULT 'uk',
+                    joined TIMESTAMP,
+                    is_premium BOOLEAN DEFAULT FALSE,
+                    premium_since TIMESTAMP,
+                    premium_expires TIMESTAMP,
+                    state TEXT DEFAULT ''
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS payments (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    plan TEXT,
+                    stars INTEGER,
+                    days INTEGER,
+                    payment_date TIMESTAMP,
+                    telegram_payment_charge_id TEXT
+                )
+            """)
+            conn.commit()
+            logger.info("✅ PostgreSQL tables initialized")
         except Exception as e:
             logger.error(f"PostgreSQL init error: {e}")
             raise
         finally:
             conn.close()
     else:
-        with db() as c:
-            c.executescript("""
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.executescript("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY,
                 username TEXT,
@@ -143,11 +189,14 @@ def init_db():
             );
             """)
             logger.info("✅ SQLite tables initialized")
+        finally:
+            conn.close()
 
 def get_user(uid):
-    with db() as c:
+    conn = get_db_connection()
+    try:
         if USE_POSTGRES:
-            cur = c.cursor()
+            cur = conn.cursor()
             cur.execute("SELECT * FROM users WHERE id = %s", (uid,))
             row = cur.fetchone()
             if row:
@@ -155,26 +204,35 @@ def get_user(uid):
                 return dict(zip(cols, row))
             return None
         else:
-            row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM users WHERE id=?", (uid,))
+            row = cur.fetchone()
             if row:
                 return dict(row)
             return None
+    finally:
+        conn.close()
 
 def create_user(uid, username):
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    with db() as c:
+    conn = get_db_connection()
+    try:
         if USE_POSTGRES:
-            cur = c.cursor()
+            cur = conn.cursor()
             cur.execute(
                 "INSERT INTO users (id, username, joined) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING",
                 (uid, username, now)
             )
-            c.commit()
+            conn.commit()
         else:
-            c.execute(
+            cur = conn.cursor()
+            cur.execute(
                 "INSERT OR IGNORE INTO users (id, username, joined) VALUES (?, ?, ?)",
                 (uid, username, now)
             )
+            conn.commit()
+    finally:
+        conn.close()
 
 def _get_val(row, key, default=None):
     """Get value from dict or sqlite3.Row."""
@@ -212,9 +270,10 @@ def activate_premium(uid, days, plan, stars, charge_id):
     logger.info(f"activate_premium called: uid={uid}, days={days}, plan={plan}")
     logger.info(f"USE_POSTGRES={USE_POSTGRES}")
 
-    with db() as c:
+    conn = get_db_connection()
+    try:
         if USE_POSTGRES:
-            cur = c.cursor()
+            cur = conn.cursor()
             logger.info(f"Executing UPDATE users SET is_premium=TRUE WHERE id={uid}")
             cur.execute(
                 """UPDATE users 
@@ -233,10 +292,11 @@ def activate_premium(uid, days, plan, stars, charge_id):
             )
             logger.info(f"INSERT executed, rowcount={cur.rowcount}")
 
-            c.commit()
+            conn.commit()
             logger.info("COMMIT executed")
         else:
-            c.execute(
+            cur = conn.cursor()
+            cur.execute(
                 """UPDATE users 
                    SET is_premium = 1, 
                        premium_since = ?, 
@@ -244,11 +304,14 @@ def activate_premium(uid, days, plan, stars, charge_id):
                    WHERE id = ?""",
                 (now_iso, expires, uid)
             )
-            c.execute(
+            cur.execute(
                 """INSERT INTO payments (user_id, plan, stars, days, payment_date, telegram_payment_charge_id)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (uid, plan, stars, days, now_iso, charge_id)
             )
+            conn.commit()
+    finally:
+        conn.close()
 
     logger.info(f"Premium activated for user {uid}: {days} days, plan={plan}")
     return expires
@@ -388,6 +451,7 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
         u = get_user(uid)
         logger.info(f"User after activation: {u}")
 
+        # Send confirmation to user
         text = (
             f"🎉 <b>Оплату успішно завершено!</b>\n\n"
             f"💎 Premium активовано!\n"
@@ -399,6 +463,7 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
         kb = [[InlineKeyboardButton("🎵 Перейти в MusicLSP", url="https://t.me/MusicLSP_bot")]]
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
+        # Notify admin
         try:
             user = await ctx.bot.get_chat(uid)
             uname = f"@{user.username}" if user.username else str(uid)
@@ -441,8 +506,6 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = "💿 <b>Free</b>\n\nОформи Premium через /start"
 
     await update.message.reply_text(text, parse_mode="HTML")
-
-# ─── Admin Commands ────────────────────────────────────────────────────────────
 
 async def cmd_testpremium(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Admin only: activate premium without payment (for testing)."""
